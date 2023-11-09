@@ -3,6 +3,7 @@ package app
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"strings"
@@ -17,7 +18,32 @@ var dockerfileCmd = &cobra.Command{
 	Use:  "dockerfile",
 	Long: "Sanitize Dockerfile",
 	Run: func(cmd *cobra.Command, args []string) {
-		sanitizeDockerfile()
+
+		// Sanitize Stdin -> Stdout
+		if len(args) == 0 {
+			sanitizeDockerfile(os.Stdin, os.Stdout)
+			return
+		}
+
+		// In-place sanitization
+		var err error
+		r, err := os.Open(args[0])
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		w, err := os.OpenFile(args[0]+".sanitized", os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0644)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		sanitizeDockerfile(r, w)
+
+		r.Close()
+		w.Close()
+		if err := os.Rename(args[0]+".sanitized", args[0]); err != nil {
+			log.Fatal(err)
+		}
 	},
 }
 
@@ -25,15 +51,14 @@ func init() {
 	RootCmd.AddCommand(dockerfileCmd)
 }
 
-func sanitizeDockerfile() {
-	// read from stdin line by line
-	scanner := bufio.NewScanner(os.Stdin)
+func sanitizeDockerfile(r io.Reader, w io.Writer) {
+	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
 		line := scanner.Text()
 		if strings.HasPrefix(line, "FROM") {
-			fmt.Println(sanitizeFrom(line))
+			fmt.Fprintln(w, sanitizeFrom(line))
 		} else {
-			fmt.Println(line)
+			fmt.Fprintln(w, line)
 		}
 	}
 }
